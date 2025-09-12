@@ -1,0 +1,61 @@
+# Minimal Airflow on Docker: Postgres + Airflow (init, webserver, scheduler)
+services:
+  # ---- Metadata DB for Airflow ----
+  airflow-postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow # DB user Airflow will use
+      POSTGRES_PASSWORD: airflow # Dev password (change for prod)
+      POSTGRES_DB: airflow # DB name
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data # Persist DB data across restarts
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "airflow" ] # Wait until Postgres is ready
+      interval: 5s
+      retries: 5
+
+  # ---- One-time initializer (DB migrate + create admin user) ----
+  airflow-init:
+    image: apache/airflow:2.9.2
+    depends_on: [ airflow-postgres ] # Run after DB is up
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False" # Keep UI clean
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      _AIRFLOW_DB_UPGRADE: "true" # Ensure schema is up-to-date
+      _AIRFLOW_WWW_USER_CREATE: "true" # Create initial admin user
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin # Dev credentials (do NOT use in prod)
+      PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-databricks>=5.0.0" # Install Databricks provider
+    command: >
+      bash -lc "airflow db upgrade && airflow users create --username admin --password admin --firstname Inioluwa --lastname Eboda --role Admin --email inioluwaeboda1@gmail.com || true && echo Init done"
+    volumes:
+      - ./dags:/opt/airflow/dags # Mount your DAGs into the container
+
+  # ---- Airflow Web UI ----
+  airflow-webserver:
+    image: apache/airflow:2.9.2
+    depends_on: [ airflow-init, airflow-postgres ] # Start after init & DB
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-databricks>=5.0.0"
+    command: webserver
+    ports: [ "8080:8080" ] # Visit http://localhost:8080
+    volumes:
+      - ./dags:/opt/airflow/dags
+
+  # ---- Airflow Scheduler (runs tasks) ----
+  airflow-scheduler:
+    image: apache/airflow:2.9.2
+    depends_on: [ airflow-init, airflow-postgres ]
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-databricks>=5.0.0"
+    command: scheduler
+    volumes:
+      - ./dags:/opt/airflow/dags
+
+# Persistent volume for Postgres data
+volumes:
+  postgres-db-volume:
