@@ -48,7 +48,7 @@ flowchart LR
 ├── clean_transformed.py                 # Databricks: curate raw CSVs → Parquet
 ├── sentiment_analysis.py                # Databricks: LLM sentiment
 ├── redShift_analysis.sql                # DDL + COPY + DQ checks + analysis portfolio
-└── airbnb_exploratory_analysis.ipynb   # Optional local EDA
+└── airbnb_exploratory_analysis.ipynb   
 ```
 
 What each piece does 
