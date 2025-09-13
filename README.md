@@ -1,147 +1,143 @@
 Airbnb Reviews Analytics (Databricks + Airflow + Redshift + LLM Sentiment)
 ==========================================================================
 
-End-to-end ELT that cleans raw Airbnb data in **Databricks**, enriches reviews with **LLM sentiment**, orchestrates runs via **Airflow (Docker)**, and lands analytics-ready tables in **Amazon Redshift**. The goal: show practical data engineering chops (orchestration, cloud storage, Lakehouse transforms, warehouse modeling, and using an LLM safely/cost-aware).
+A compact, production-style project that ingests raw Airbnb data, cleans & curates it with **PySpark on Databricks**, enriches reviews with **LLM sentiment**, lands analytics tables in **Amazon Redshift**, and automates the whole flow with **Apache Airflow**.
 
-⚙️ Architecture (high level)
-----------------------------
+Architecture & Flow
+-------------------
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   flowchart LR    S3Raw["S3 /raw\n(listings.csv, reviews.csv)"]    DBXClean["Databricks Notebook\nclean_transformed.py\n→ Parquet partitions"]    S3Cur["S3 /curated\n(dim_listing, dim_date,\n  fact_reviews_stage)"]    LLM["Databricks Notebook\nsentiment_analysis.py\n(OpenAI, batched)"]    S3Fact["S3 /curated/fact_reviews"]    AF["Airflow DAG\n(DatabricksSubmitRunOperator)"]    RS["Amazon Redshift\n(schema: airbnb)"]    BI["SQL / Views / BI"]    S3Raw --> DBXClean --> S3Cur --> LLM --> S3Fact    AF --> DBXClean    AF --> LLM    S3Cur -->|COPY (Parquet)| RS    S3Fact -->|COPY (Parquet)| RS --> BI   `
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   flowchart LR    A[Raw S3 CSVs\nlistings/, reviews/] --> B[Databricks\nclean_transformed.py]    subgraph Curated S3 (Parquet, partitioned by ds)      C[dim_listing/ds=YYYY-MM-DD]      D[dim_date/ds=YYYY-MM-DD]      E[fact_reviews_stage/ds=YYYY-MM-DD]    end    B --> C    B --> D    B --> E    E --> F[Databricks\nsentiment_analysis.py]    F --> G[fact_reviews/ds=YYYY-MM-DD]    C --> H[Amazon Redshift\nredShift_analysis.sql]    D --> H    G --> H   `
 
-📁 What’s in this repo
-----------------------
-
-*   dags/airbnb\_databricks\_dag.py — runs **clean** then **sentiment** notebooks on Databricks.
+*   **Airflow** orchestrates the two Databricks steps (clean → sentiment) per **run\_ds** (date) and optional sampling knobs.
     
-*   clean\_transformed.py — reads S3 **/raw**, standardizes & writes **/curated** (partitioned by ds).
+*   **Curated outputs** are **Parquet partitions** in S3 (one directory per day).
     
-*   sentiment\_analysis.py — samples reviews, calls **OpenAI** to label sentiment, writes **/curated/fact\_reviews**.
-    
-*   redshift\_analysis.sql — DDL, COPY loads, data-quality checks, and **analysis queries** (+ views).
-    
-*   docker-compose.yml — minimal Airflow on Docker (webserver + scheduler + Postgres).
-    
-*   README.md — this file.
+*   **Redshift** script recreates the schema, **COPY**\-loads the selected day, runs **data-quality checks**, and executes **portfolio analyses**.
     
 
-> Screenshots/diagram optional: add under docs/ and reference them here.
+Repository Layout
+-----------------
 
-🔑 Tech choices (and why)
--------------------------
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   .  ├── dag/airbnb_databricks_dag.py        # Airflow DAG: clean ➜ sentiment  ├── docker-compose.yml                   # Minimal Airflow + Postgres (dev)  ├── clean_transformed.py                 # Databricks notebook script: curate raw CSVs → Parquet  ├── sentiment_analysis.py                # Databricks notebook script: LLM sentiment (sampled)  ├── redShift_analysis.sql                # DDL + COPY + DQ checks + analysis queries  └── notebooks/      └── airbnb_exploratory_analysis.ipynb (optional local EDA)   `
 
-*   **Parquet on S3** for cheap, columnar, partitioned storage → easy COPY into Redshift.
-    
-*   **Databricks** to do robust Spark cleaning + light feature engineering.
-    
-*   **Airflow** to make the pipeline reproducible and parameterized (run\_ds, sampling knobs).
-    
-*   **OpenAI** for sentiment → wrapped with strict JSON schema, batching, retries, and sampling limits.
-    
-*   **Redshift** for fast analytical SQL and shareable views.
-    
+What each piece does (at a glance)
+----------------------------------
 
-🚀 Quickstart (minimal)
------------------------
+### clean\_transformed.py (Databricks)
 
-**Prereqs**
-
-*   S3 bucket with /raw/listings/ and /raw/reviews/ (CSV).
+*   Reads **raw/listings/** & **raw/reviews/** CSVs from S3 with robust options for messy data.
     
-*   Databricks workspace + cluster; a secret openai/OPENAI\_API\_KEY.
+*   Normalizes schema (lowercases, trims, casts IDs to strings).
     
-*   OpenAI API key (same secret).
+*   Engineers features (e.g., **price\_bucket**, **amenities\_count**, boolean parsing).
     
-*   Redshift Serverless (IAM role with **ListBucket/GetObject** on your bucket).
+*   Writes three partitioned tables under **curated/** **for one day** (ds=YYYY-MM-DD):
     
-
-**1) Airflow via Docker**
-
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   # From repo root  printf "AIRFLOW_UID=%s\nAIRFLOW_GID=0\n" "$(id -u)" > .env  docker compose down -v  docker compose up -d   `
-
-Open http://localhost:8080 → login (admin/admin by default in this compose).
-
-**2) Airflow connection & variables**
-
-*   Admin → **Connections** → databricks\_default
-    
-    *   Host: https://.cloud.databricks.com (no trailing slash)
+    *   **dim\_listing** – one clean row per listing.
         
-    *   Password:
+    *   **dim\_date** – calendar rows from actual review dates.
         
-*   Admin → **Variables**
+    *   **fact\_reviews\_stage** – one row per review with comments and tokens\_ct (for LLM cost control).
+        
+*   Idempotent per-day write: each run **overwrites exactly one ds partition**.
     
-    *   databricks\_cluster\_id → e.g. 0825-203211-a2sy9jbk
+
+### sentiment\_analysis.py (Databricks) — **what it actually does**
+
+*   **Purpose:** read **curated/fact\_reviews\_stage/ds={RUN\_DS}**, score comment sentiment with OpenAI, write **curated/fact\_reviews/ds={RUN\_DS}**.
+    
+*   **Safety & fallback:**
+    
+    *   Resolves RUN\_DS from a Databricks widget or environment; if the requested partition is missing, it **falls back to the latest available day** under fact\_reviews\_stage/.
         
-    *   clean\_nb\_path → e.g. /Shared/airbnb/clean\_transformed
+    *   If no comments after filters, it exits cleanly (no error).
         
-    *   sentiment\_nb\_path → e.g. /Shared/airbnb/sentiment\_analysis
+*   **Cost/latency control (widgets/env):**
+    
+    *   MAX\_ROWS (hard cap), SAMPLE\_FRAC (0..1), MAX\_TOKENS (skip long comments), SEED (deterministic shuffling).
+        
+*   **LLM call:**
+    
+    *   Batches small groups (BATCH\_SIZE) with sleep (SLEEP\_SEC) to avoid rate spikes.
+        
+    *   Sends a strict **JSON-only** instruction; parses the result; if parsing fails or counts mismatch, returns conservative defaults.
+        
+    *   Produces sentiment\_label ∈ {POSITIVE, NEGATIVE} and sentiment\_score ∈ \[0,1\].
+        
+*   **Secrets & robustness:**
+    
+    *   API key from OPENAI\_API\_KEY env var; if absent, reads a Databricks Secret (scope=openai, key=OPENAI\_API\_KEY).
+        
+    *   Clear logging of which partition is read/written.
+        
+*   **Output:**
+    
+    *   Writes **fact\_reviews/ds=YYYY-MM-DD** with columns_(review\_id, listing\_id, date\_key, comments, tokens\_ct, sentiment\_label, sentiment\_score, ds)_.
         
 
-**3) Run the DAG**
 
-*   {"run\_ds":"2025-08-25","max\_rows":1000,"sample\_frac":0,"max\_tokens":0,"seed":42}
+### airbnb\_databricks\_dag.py (Airflow)
+
+*   Two Databricks tasks, **linear DAG**: clean\_transformed → sentiment\_analysis.
     
-*   The DAG:
+*   run\_ds defaults to Airflow’s {{ ds }}; you can override in the **Trigger** dialog.
     
-    1.  writes /curated/{dim\_listing, dim\_date, fact\_reviews\_stage}/ds=YYYY-MM-DD/
+*   Passes sampling knobs to sentiment so you can throttle cost/time **without code changes**.
+    
+*   Uses **Airflow Variables** for Databricks connection, cluster id, and notebook paths.
+    
+
+### redShift\_analysis.sql (Warehouse)
+
+*   Creates **airbnb** schema and three tables: dim\_listing, dim\_date, fact\_reviews.
+    
+*   **COPY**\-loads from the curated **ds** partition you choose (single-day snapshot).
+    
+*   **Data-quality gates:** row counts, null keys, duplicate PKs, referential integrity, out-of-range values.
+    
+*   **Analysis portfolio:** supply mix, price landscape (avg/median/p90), sentiment by city, value picks, availability signals, best/worst sentiment listings, etc.
+    
+*   **Reusable views** (e.g., vw\_listing\_sentiment, vw\_city\_sentiment\_daily) for BI dashboards.
+    
+
+How to run (quick start)
+------------------------
+
+### 1) Bring up Airflow locally (dev only)
+
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   docker compose up -d  # UI at http://localhost:8080 (admin/admin) – dev creds only   `
+
+### 2) Trigger a run for a given day
+
+*   **UI:** Trigger DAG → “Configure” → paste JSON
+    
+
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   {"run_ds":"2025-08-25","max_rows":1500,"sample_frac":0.1,"max_tokens":80,"seed":42}   `
+
+*   **CLI:**
+    
+
+Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   airflow dags trigger -c '{"run_ds":"2025-08-25"}' airbnb_databricks   `
+
+### 3) Publish to Redshift
+
+*   Open redShift\_analysis.sql, replace :DS\_DAY and the IAM role ARN, then run:
+    
+    *   DDLs → COPY loads → DQ checks → analysis queries.
         
-    2.  writes /curated/fact\_reviews/ds=YYYY-MM-DD/ with sentiment.
-        
 
-**4) Load Redshift & analyze**
+Design choices (why it’s built this way)
+----------------------------------------
 
-Open Redshift Query Editor v2 → run sql/redshift\_setup\_and\_analysis.sql(Find/replace :DS\_DAY with your date and set your IAM role ARN).
-
-🧱 Data model (warehouse)
--------------------------
-
-*   dim\_date(date\_key, yyyy, mm, dd, dow, is\_weekend)
+*   **Idempotent per-day writes**: small blast radius, simple reruns, easy backfills.
     
-*   dim\_listing(listing\_id PK, … attributes, price, superhost, availability\_\*)
+*   **Explicit sampling** on LLM: control spend/latency; reproducible with SEED.
     
-*   fact\_reviews(review\_id PK, listing\_id FK, date\_key FK, comments, tokens\_ct, sentiment\_label, sentiment\_score)
+*   **Strict JSON contract** with the model: deterministic parsing, safe defaults on failure.
+    
+*   **Warehouse-ready** star-ish model: easy joins, fast aggregation, BI-friendly views.
+    
+*   **Separation of concerns**: curation vs. enrichment vs. publishing vs. analytics.
     
 
-All are **daily snapshots** (COPY from one ds partition).
-
-📊 Example questions answered
------------------------------
-
-*   **Which neighborhoods have the most inventory?** (dim\_listing counts)
     
-*   **Do Superhosts command higher price or ratings?** (avg price/rating by host\_is\_superhost)
-    
-*   **Is instant-book correlated with satisfaction?** (avg rating)
-    
-*   **Review seasonality?** (reviews by yyyy, mm)
-    
-*   **Where is sentiment strongest/weakest?** (city-level positive rate, listing top/bottom 10, price band vs positive rate)
-    
-
-These are all included in sql/redshift\_setup\_and\_analysis.sql (plus two reusable views).
-
-🧪 Reliability & cost controls
-------------------------------
-
-*   **Sampling knobs** in sentiment\_analysis.py: MAX\_ROWS, SAMPLE\_FRAC, MAX\_TOKENS, SEED to keep cost/latency predictable.
-    
-*   **Batched LLM calls** with retries, strict JSON parsing, safe defaults if parsing fails.
-    
-*   **Data-quality checks** in SQL: row counts, PK duplicates, referential integrity, value ranges.
-    
-
-🔮 Extensions
--------------
-
-*   Add **Great Expectations** for formal DQ tests.
-    
-*   Multi-class sentiment (e.g., positive/neutral/negative) or topic tagging.
-    
-*   Incremental model with ds column in Redshift and late-arriving handling.
-    
-*   Swap Redshift COPY for an ELT tool (e.g., dbt) to model downstream marts.
-    
-
-### Credit & data
-
-This project expects an Airbnb-style listings/reviews d
