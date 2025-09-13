@@ -47,6 +47,7 @@ flowchart LR
 ├── docker-compose.yml                   # Minimal Airflow + Postgres (dev)
 ├── clean_transformed.py                 # Databricks: curate raw CSVs → Parquet
 ├── sentiment_analysis.py                # Databricks: LLM sentiment
+├── README.md    
 ├── redShift_analysis.sql                # DDL + COPY + DQ checks + analysis portfolio
 └── airbnb_exploratory_analysis.ipynb   
 ```
