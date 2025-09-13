@@ -40,6 +40,7 @@ flowchart LR
 📁 Repository Layout
 -----------------
 
+```text
 ├── dag/
 │   ├── airbnb_databricks_dag.py        # Airflow DAG: clean ➜ sentiment
 │   └── airflow_dag_screenshot.png      # Screenshot of Airflow DAG
@@ -48,7 +49,7 @@ flowchart LR
 ├── sentiment_analysis.py                # Databricks: LLM sentiment
 ├── redShift_analysis.sql                # DDL + COPY + DQ checks + analysis portfolio
 └── airbnb_exploratory_analysis.ipynb   # Optional local EDA
-
+```
 
 What each piece does 
 ----------------------------------
