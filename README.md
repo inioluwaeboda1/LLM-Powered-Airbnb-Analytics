@@ -160,7 +160,7 @@ docker compose up -d
     "seed": 42
   }
 ```
-```markdown
+
  * **CLI:**
 
  ```bash
