@@ -161,9 +161,10 @@ docker compose up -d
   }
 ```
 
-* **CLI:**
+```
+ **CLI:**
 
-```bash
+ ```bash
   airflow dags trigger -c '{"run_ds":"2025-08-25"}' airbnb_databricks
 ```
 
