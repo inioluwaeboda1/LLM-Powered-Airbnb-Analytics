@@ -3,10 +3,32 @@ Airbnb Reviews Analytics (Databricks + Airflow + Redshift + LLM Sentiment)
 
 A compact, production-style project that ingests raw Airbnb data, cleans & curates it with **PySpark on Databricks**, enriches reviews with **LLM sentiment**, lands analytics tables in **Amazon Redshift**, and automates the whole flow with **Apache Airflow**.
 
-Architecture & Flow
+🧭 Architecture & Flow
 -------------------
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   flowchart LR    A[Raw S3 CSVs\nlistings/, reviews/] --> B[Databricks\nclean_transformed.py]    subgraph Curated S3 (Parquet, partitioned by ds)      C[dim_listing/ds=YYYY-MM-DD]      D[dim_date/ds=YYYY-MM-DD]      E[fact_reviews_stage/ds=YYYY-MM-DD]    end    B --> C    B --> D    B --> E    E --> F[Databricks\nsentiment_analysis.py]    F --> G[fact_reviews/ds=YYYY-MM-DD]    C --> H[Amazon Redshift\nredShift_analysis.sql]    D --> H    G --> H   `
+## Data Pipeline Flow
+
+```mermaid
+flowchart LR
+  A[Raw S3 CSVs\nlistings/, reviews/] --> B[Databricks\nclean_transformed.py]
+
+  subgraph Curated S3 (Parquet, partitioned by ds)
+    C[dim_listing/ds=YYYY-MM-DD]
+    D[dim_date/ds=YYYY-MM-DD]
+    E[fact_reviews_stage/ds=YYYY-MM-DD]
+  end
+
+  B --> C
+  B --> D
+  B --> E
+
+  E --> F[Databricks\nsentiment_analysis.py]
+  F --> G[fact_reviews/ds=YYYY-MM-DD]
+
+  C --> H[Amazon Redshift\nredShift_analysis.sql]
+  D --> H
+  G --> H
+```
 
 *   **Airflow** orchestrates the two Databricks steps (clean → sentiment) per **run\_ds** (date) and optional sampling knobs.
     
@@ -15,12 +37,21 @@ Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQL
 *   **Redshift** script recreates the schema, **COPY**\-loads the selected day, runs **data-quality checks**, and executes **portfolio analyses**.
     
 
-Repository Layout
+📁 Repository Layout
 -----------------
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   .  ├── dag/airbnb_databricks_dag.py        # Airflow DAG: clean ➜ sentiment  ├── docker-compose.yml                   # Minimal Airflow + Postgres (dev)  ├── clean_transformed.py                 # Databricks notebook script: curate raw CSVs → Parquet  ├── sentiment_analysis.py                # Databricks notebook script: LLM sentiment (sampled)  ├── redShift_analysis.sql                # DDL + COPY + DQ checks + analysis queries  └── notebooks/      └── airbnb_exploratory_analysis.ipynb (optional local EDA)   `
+```mermaid
+├── dag/
+│   ├── airbnb_databricks_dag.py        # Airflow DAG: clean ➜ sentiment
+│   └── airflow_dag_screenshot.png      # Screenshot of Airflow DAG
+├── docker-compose.yml                   # Minimal Airflow + Postgres (dev)
+├── clean_transformed.py                 # Databricks: curate raw CSVs → Parquet
+├── sentiment_analysis.py                # Databricks: LLM sentiment
+├── redShift_analysis.sql                # DDL + COPY + DQ checks + analysis portfolio
+└── airbnb_exploratory_analysis.ipynb   
+ ``` 
 
-What each piece does (at a glance)
+What each piece does 
 ----------------------------------
 
 ### clean\_transformed.py (Databricks)
@@ -100,24 +131,34 @@ What each piece does (at a glance)
 *   **Reusable views** (e.g., vw\_listing\_sentiment, vw\_city\_sentiment\_daily) for BI dashboards.
     
 
-How to run (quick start)
+How to run 
 ------------------------
 
-### 1) Bring up Airflow locally (dev only)
+## 1) Bring up Airflow locally (dev only)
+```bash
+docker compose up -d
+# UI at http://localhost:8080 (admin/admin) 
+```
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   docker compose up -d  # UI at http://localhost:8080 (admin/admin) – dev creds only   `
+## 2) Trigger a run for a given day
+* **UI:**  
+  Trigger DAG → “Configure” → paste JSON:
 
-### 2) Trigger a run for a given day
-
-*   **UI:** Trigger DAG → “Configure” → paste JSON
+  ```json
+  {
+    "run_ds": "2025-08-25",
+    "max_rows": 1500,
+    "sample_frac": 0.10,
+    "max_tokens": 80,
+    "seed": 42
+  }
+```
     
+* **CLI:**
 
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   {"run_ds":"2025-08-25","max_rows":1500,"sample_frac":0.1,"max_tokens":80,"seed":42}   `
-
-*   **CLI:**
-    
-
-Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQLGroovyHTMLJavaJavaScriptJSONJSXKotlinLaTeXLessLuaMakefileMarkdownMATLABMarkupObjective-CPerlPHPPowerShell.propertiesProtocol BuffersPythonRRubySass (Sass)Sass (Scss)SchemeSQLShellSwiftSVGTSXTypeScriptWebAssemblyYAMLXML`   airflow dags trigger -c '{"run_ds":"2025-08-25"}' airbnb_databricks   `
+  ```bash
+  airflow dags trigger -c '{"run_ds":"2025-08-25"}' airbnb_databricks
+```
 
 ### 3) Publish to Redshift
 
@@ -126,7 +167,7 @@ Plain textANTLR4BashCC#CSSCoffeeScriptCMakeDartDjangoDockerEJSErlangGitGoGraphQL
     *   DDLs → COPY loads → DQ checks → analysis queries.
         
 
-Design choices (why it’s built this way)
+Design choices 
 ----------------------------------------
 
 *   **Idempotent per-day writes**: small blast radius, simple reruns, easy backfills.
