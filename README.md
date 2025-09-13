@@ -56,82 +56,85 @@ What each piece does
 
 ### clean\_transformed.py (Databricks)
 
-*   Reads **raw/listings/** & **raw/reviews/** CSVs from S3 with robust options for messy data.
-    
-*   Normalizes schema (lowercases, trims, casts IDs to strings).
-    
-*   Engineers features (e.g., **price\_bucket**, **amenities\_count**, boolean parsing).
-    
-*   Writes three partitioned tables under **curated/** **for one day** (ds=YYYY-MM-DD):
-    
-    *   **dim\_listing** – one clean row per listing.
-        
-    *   **dim\_date** – calendar rows from actual review dates.
-        
-    *   **fact\_reviews\_stage** – one row per review with comments and tokens\_ct (for LLM cost control).
-        
-*   Idempotent per-day write: each run **overwrites exactly one ds partition**.
-    
+  *   Reads **raw/listings/** & **raw/reviews/** CSVs from S3 with robust options for messy data.
+      
+  *   Normalizes schema (lowercases, trims, casts IDs to strings).
+      
+  *   Engineers features (e.g., **price\_bucket**, **amenities\_count**, boolean parsing).
+      
+  *   Writes three partitioned tables under **curated/** **for one day** (ds=YYYY-MM-DD):
+      
+      *   **dim\_listing** – one clean row per listing.
+          
+      *   **dim\_date** – calendar rows from actual review dates.
+          
+      *   **fact\_reviews\_stage** – one row per review with comments and tokens\_ct (for LLM cost control).
+          
+  *   Idempotent per-day write: each run **overwrites exactly one ds partition**.
+      
 
 
+<br><br>
 
 ### sentiment\_analysis.py (Databricks) — **what it actually does**
 
-*   **Purpose:** read **curated/fact\_reviews\_stage/ds={RUN\_DS}**, score comment sentiment with OpenAI, write **curated/fact\_reviews/ds={RUN\_DS}**.
-    
-*   **Safety & fallback:**
-    
-    *   Resolves RUN\_DS from a Databricks widget or environment; if the requested partition is missing, it **falls back to the latest available day** under fact\_reviews\_stage/.
-        
-    *   If no comments after filters, it exits cleanly (no error).
-        
-*   **Cost/latency control (widgets/env):**
-    
-    *   MAX\_ROWS (hard cap), SAMPLE\_FRAC (0..1), MAX\_TOKENS (skip long comments), SEED (deterministic shuffling).
-        
-*   **LLM call:**
-    
-    *   Batches small groups (BATCH\_SIZE) with sleep (SLEEP\_SEC) to avoid rate spikes.
-        
-    *   Sends a strict **JSON-only** instruction; parses the result; if parsing fails or counts mismatch, returns conservative defaults.
-        
-    *   Produces sentiment\_label ∈ {POSITIVE, NEGATIVE} and sentiment\_score ∈ \[0,1\].
-        
-*   **Secrets & robustness:**
-    
-    *   API key from OPENAI\_API\_KEY env var; if absent, reads a Databricks Secret (scope=openai, key=OPENAI\_API\_KEY).
-        
-    *   Clear logging of which partition is read/written.
-        
-*   **Output:**
-    
-    *   Writes **fact\_reviews/ds=YYYY-MM-DD** with columns_(review\_id, listing\_id, date\_key, comments, tokens\_ct, sentiment\_label, sentiment\_score, ds)_.
+  *   **Purpose:** read **curated/fact\_reviews\_stage/ds={RUN\_DS}**, score comment sentiment with OpenAI, write **curated/fact\_reviews/ds={RUN\_DS}**.
+      
+  *   **Safety & fallback:**
+      
+      *   Resolves RUN\_DS from a Databricks widget or environment; if the requested partition is missing, it **falls back to the latest available day** under fact\_reviews\_stage/.
+          
+      *   If no comments after filters, it exits cleanly (no error).
+          
+  *   **Cost/latency control (widgets/env):**
+      
+      *   MAX\_ROWS (hard cap), SAMPLE\_FRAC (0..1), MAX\_TOKENS (skip long comments), SEED (deterministic shuffling).
+          
+  *   **LLM call:**
+      
+      *   Batches small groups (BATCH\_SIZE) with sleep (SLEEP\_SEC) to avoid rate spikes.
+          
+      *   Sends a strict **JSON-only** instruction; parses the result; if parsing fails or counts mismatch, returns conservative defaults.
+          
+      *   Produces sentiment\_label ∈ {POSITIVE, NEGATIVE} and sentiment\_score ∈ \[0,1\].
+          
+  *   **Secrets & robustness:**
+      
+      *   API key from OPENAI\_API\_KEY env var; if absent, reads a Databricks Secret (scope=openai, key=OPENAI\_API\_KEY).
+          
+      *   Clear logging of which partition is read/written.
+          
+  *   **Output:**
+      
+      *   Writes **fact\_reviews/ds=YYYY-MM-DD** with columns_(review\_id, listing\_id, date\_key, comments, tokens\_ct, sentiment\_label, sentiment\_score, ds)_.
         
 
-
+<br><br>
 
 ### airbnb\_databricks\_dag.py (Airflow)
 
-*   Two Databricks tasks, **linear DAG**: clean\_transformed → sentiment\_analysis.
-    
-*   run\_ds defaults to Airflow’s {{ ds }}; you can override in the **Trigger** dialog.
-    
-*   Passes sampling knobs to sentiment so you can throttle cost/time **without code changes**.
-    
-*   Uses **Airflow Variables** for Databricks connection, cluster id, and notebook paths.
-    
+  *   Two Databricks tasks, **linear DAG**: clean\_transformed → sentiment\_analysis.
+      
+  *   run\_ds defaults to Airflow’s {{ ds }}; you can override in the **Trigger** dialog.
+      
+  *   Passes sampling knobs to sentiment so you can throttle cost/time **without code changes**.
+      
+  *   Uses **Airflow Variables** for Databricks connection, cluster id, and notebook paths.
+
+
+<br><br>
 
 ### redShift\_analysis.sql (Warehouse)
 
-*   Creates **airbnb** schema and three tables: dim\_listing, dim\_date, fact\_reviews.
-    
-*   **COPY**\-loads from the curated **ds** partition you choose (single-day snapshot).
-    
-*   **Data-quality gates:** row counts, null keys, duplicate PKs, referential integrity, out-of-range values.
-    
-*   **Analysis portfolio:** supply mix, price landscape (avg/median/p90), sentiment by city, value picks, availability signals, best/worst sentiment listings, etc.
-    
-*   **Reusable views** (e.g., vw\_listing\_sentiment, vw\_city\_sentiment\_daily) for BI dashboards.
+  *   Creates **airbnb** schema and three tables: dim\_listing, dim\_date, fact\_reviews.
+      
+  *   **COPY**\-loads from the curated **ds** partition you choose (single-day snapshot).
+      
+  *   **Data-quality gates:** row counts, null keys, duplicate PKs, referential integrity, out-of-range values.
+      
+  *   **Analysis portfolio:** supply mix, price landscape (avg/median/p90), sentiment by city, value picks, availability signals, best/worst sentiment listings, etc.
+      
+  *   **Reusable views** (e.g., vw\_listing\_sentiment, vw\_city\_sentiment\_daily) for BI dashboards.
 
     
 
