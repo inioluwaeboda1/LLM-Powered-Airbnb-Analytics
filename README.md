@@ -35,6 +35,28 @@ flowchart LR
 *   **Curated outputs** are **Parquet partitions** in S3 (one directory per day).
     
 *   **Redshift** script recreates the schema, **COPY**\-loads the selected day, runs **data-quality checks**, and executes **portfolio analyses**.
+
+
+Data Source
+-----------
+
+This project uses public datasets from [**Inside Airbnb**](https://insideairbnb.com/).
+
+*   **Snapshot:** September 2024
+    
+*   **Geography:** United Kingdom (GB)
+    
+*   **Files used:** listings.csv and reviews.csv
+    
+*   **What they contain:**
+    
+    *   listings.csv — listing attributes (host, location, property/room type, price, amenities, review scores, etc.)
+        
+    *   reviews.csv — one row per review (listing\_id, date, reviewer fields, free-text comments)
+        
+*   **How I staged them:** downloaded from Inside Airbnb and uploaded to S3 unders3://airbnb-bucket-data/raw/listings/ and s3://airbnb-bucket-data/raw/reviews/ (CSV; gzip accepted).
+    
+*   **Attribution & use:** Data is provided by Inside Airbnb for research/analysis. Please review their site for current terms and attribution requirements.
     
 
 📁 Repository Layout
