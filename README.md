@@ -148,23 +148,23 @@ docker compose up -d
 ```
 
 ## 2) Trigger a run for a given day
-* **UI:**  
-  Trigger DAG → “Configure” → paste JSON:
+**UI:**  
+Trigger DAG → “Configure” → paste JSON:
 
-  ```json
-  {
-    "run_ds": "2025-08-25",
-    "max_rows": 1500,
-    "sample_frac": 0.10,
-    "max_tokens": 80,
-    "seed": 42
-  }
+```json
+{
+  "run_ds": "2025-08-25",
+  "max_rows": 1500,
+  "sample_frac": 0.10,
+  "max_tokens": 80,
+  "seed": 42
+}
 ```
 
- * **CLI:**
+**CLI:**
 
- ```bash
-  airflow dags trigger -c '{"run_ds":"2025-08-25"}' airbnb_databricks
+```bash
+airflow dags trigger -c '{"run_ds":"2025-08-25"}' airbnb_databricks
 ```
 
 ### 3) Publish to Redshift
