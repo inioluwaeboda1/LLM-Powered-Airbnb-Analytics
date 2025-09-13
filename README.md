@@ -12,7 +12,7 @@ A compact, production-style project that ingests raw Airbnb data, cleans & curat
 flowchart LR
   A[Raw S3 CSVs\nlistings/, reviews/] --> B[Databricks\nclean_transformed.py]
 
-  subgraph Curated S3 (Parquet, partitioned by ds)
+  subgraph "Curated S3 - Parquet, partitioned by ds"
     C[dim_listing/ds=YYYY-MM-DD]
     D[dim_date/ds=YYYY-MM-DD]
     E[fact_reviews_stage/ds=YYYY-MM-DD]
@@ -73,6 +73,8 @@ What each piece does
 *   Idempotent per-day write: each run **overwrites exactly one ds partition**.
     
 
+
+
 ### sentiment\_analysis.py (Databricks) — **what it actually does**
 
 *   **Purpose:** read **curated/fact\_reviews\_stage/ds={RUN\_DS}**, score comment sentiment with OpenAI, write **curated/fact\_reviews/ds={RUN\_DS}**.
@@ -107,6 +109,7 @@ What each piece does
         
 
 
+
 ### airbnb\_databricks\_dag.py (Airflow)
 
 *   Two Databricks tasks, **linear DAG**: clean\_transformed → sentiment\_analysis.
@@ -129,6 +132,7 @@ What each piece does
 *   **Analysis portfolio:** supply mix, price landscape (avg/median/p90), sentiment by city, value picks, availability signals, best/worst sentiment listings, etc.
     
 *   **Reusable views** (e.g., vw\_listing\_sentiment, vw\_city\_sentiment\_daily) for BI dashboards.
+
     
 
 How to run 
